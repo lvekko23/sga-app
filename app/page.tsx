@@ -21,248 +21,256 @@ interface Producto {
 }
 
 export default function DashboardSGA() {
-  // 1. Estado de los Trabajos Mensuales (Tu lógica original de inputs)
-  const [datosMesActual, setDatosMesActual] = useState({
-    trabajos: [
-      { id: 1, cliente: "Consorcio Mitre", servicio: "Desinsectación", fecha: "2026-05-20", gastosExtra: 0, montoCobrado: 45000 },
-      { id: 2, cliente: "Panadería San José", servicio: "Control de Roedores", fecha: "2026-05-25", gastosExtra: 1200, montoCobrado: 60000 },
-      { id: 3, cliente: "Restaurante Plaza", servicio: "Fumigación General", fecha: "2026-05-28", gastosExtra: 0, montoCobrado: 0 }
-    ] as Trabajo[]
-  });
+  // 1. ESTADO DE LOS TRABAJOS (Con datos iniciales de ejemplo)
+  const [trabajos, setTrabajos] = useState<Trabajo[]>([
+    { id: 1, cliente: "Consorcio Mitre", servicio: "Desinsectación", fecha: "2026-05-20", gastosExtra: 0, montoCobrado: 45000 },
+    { id: 2, cliente: "Panadería San José", servicio: "Control de Roedores", fecha: "2026-05-25", gastosExtra: 1200, montoCobrado: 60000 },
+    { id: 3, cliente: "Restaurante Plaza", servicio: "Fumigación General", fecha: "2026-05-28", gastosExtra: 0, montoCobrado: 0 }
+  ]);
 
-  // 2. Estado del Depósito de Químicos (Tal cual tu captura de pantalla)
+  // 2. ESTADO DEL DEPÓSITO DE QUÍMICOS
   const [productos, setProductos] = useState<Producto[]>([
     { id: 1, nombre: "Gel Cucarachicida x40g", cantidadComprada: 5, stock_disponible: 5, costoTotal: 25000 },
     { id: 2, nombre: "Líquido Deltametrina 1L", cantidadComprada: 3, stock_disponible: 2, costoTotal: 48000 }
   ]);
 
-  // 3. Estados para el Formulario de Registrar Aplicación
-  const [productoSeleccionado, setProductoSeleccionado] = useState<Producto | null>(null);
-  const [cantidadUsada, setCantidadUsada] = useState<string>('');
-  const [trabajoAsociadoId, setTrabajoAsociadoId] = useState<string>('');
-  const [errorStock, setErrorStock] = useState<string>('');
+  // 3. ESTADOS PARA EL FORMULARIO DE NUEVO TRABAJO / CLIENTE
+  const [nuevoCliente, setNuevoCliente] = useState('');
+  const [nuevoServicio, setNuevoServicio] = useState('');
+  const [nuevoMonto, setNuevoMonto] = useState('');
 
-  // Función para editar valores directo en la tabla (gastosExtra, montoCobrado)
-  const editarTrabajo = (id: number, campo: keyof Trabajo, valor: number) => {
-    setDatosMesActual((prev) => ({
-      ...prev,
-      trabajos: prev.trabajos.map((t) => (t.id === id ? { ...t, [campo]: valor } : t)),
-    }));
+  // 4. ESTADOS PARA EL FORMULARIO DE USO DE QUÍMICOS
+  const [productoSeleccionadoId, setProductoSeleccionadoId] = useState('');
+  const [trabajoAsociadoId, setTrabajoAsociadoId] = useState('');
+  const [cantidadUsada, setCantidadUsada] = useState('');
+  const [errorStock, setErrorStock] = useState('');
+
+  // Función para editar gastos o montos directamente en la tabla
+  const editarTrabajoInline = (id: number, campo: keyof Trabajo, valor: number) => {
+    setTrabajos(prev => prev.map(t => t.id === id ? { ...t, [campo]: valor } : t));
   };
 
-  // Validar stock cada vez que cambia el producto o la cantidad ingresada
+  // FORMULARIO A: AGREGAR NUEVO TRABAJO / CLIENTE
+  const handleAgregarTrabajo = (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!nuevoCliente || !nuevoServicio) return;
+
+    const nuevo: Trabajo = {
+      id: Date.now(), // ID único temporal
+      cliente: nuevoCliente,
+      servicio: nuevoServicio,
+      fecha: new Date().toISOString().split('T')[0], // Fecha de hoy
+      gastosExtra: 0,
+      montoCobrado: Number(nuevoMonto) || 0
+    };
+
+    setTrabajos(prev => [...prev, nuevo]);
+    
+    // Limpiar inputs
+    setNuevoCliente('');
+    setNuevoServicio('');
+    setNuevoMonto('');
+  };
+
+  // VALIDACIÓN EN VIVO DEL STOCK (EL CANDADO)
   useEffect(() => {
-    if (!productoSeleccionado) return;
+    if (!productoSeleccionadoId) {
+      setErrorStock('');
+      return;
+    }
+    
+    const prod = productos.find(p => p.id === Number(productoSeleccionadoId));
     const cantNum = Number(cantidadUsada);
 
-    if (cantNum > productoSeleccionado.stock_disponible) {
-      setErrorStock(`¡No se puede! Solo quedan ${productoSeleccionado.stock_disponible} unidades en el depósito.`);
+    if (prod && cantNum > prod.stock_disponible) {
+      setErrorStock(`¡No se puede! Solo quedan ${prod.stock_disponible} unidades en el depósito.`);
     } else if (cantNum <= 0 && cantidadUsada !== '') {
       setErrorStock('La cantidad debe ser mayor a 0.');
     } else {
-      setErrorStock(''); // Todo en orden
+      setErrorStock('');
     }
-  }, [cantidadUsada, productoSeleccionado]);
+  }, [cantidadUsada, productoSeleccionadoId, productos]);
 
-  // Manejar el descuento de stock al aplicar químico en un servicio
+  // FORMULARIO B: APLICAR QUÍMICO Y DESCONTAR STOCK
   const handleRegistrarAplicacion = (e: React.FormEvent) => {
     e.preventDefault();
-    if (errorStock || !productoSeleccionado || !cantidadUsada || !trabajoAsociadoId) return;
+    if (errorStock || !productoSeleccionadoId || !cantidadUsada || !trabajoAsociadoId) return;
 
-    const cantidadRestar = Number(cantidadUsada);
+    const prodId = Number(productoSeleccionadoId);
+    const cantRestar = Number(cantidadUsada);
+    const prod = productos.find(p => p.id === prodId);
 
-    // Descontar del stock disponible en la tabla de Depósito
-    setProductos((prevProductos) =>
-      prevProductos.map((p) =>
-        p.id === productoSeleccionado.id
-          ? { ...p, stock_disponible: p.stock_disponible - cantidadRestar }
-          : p
+    if (!prod) return;
+
+    // 1. Restar del depósito
+    setProductos(prevProd =>
+      prevProd.map(p => p.id === prodId ? { ...p, stock_disponible: p.stock_disponible - cantRestar } : p)
+    );
+
+    // 2. Calcular el costo proporcional del químico usado y sumarlo a Gastos Extra del cliente
+    const costoPorUnidad = prod.costoTotal / prod.cantidadComprada;
+    const gastoCalculado = Math.round(costoPorUnidad * cantRestar);
+
+    setTrabajos(prevTrabajos =>
+      prevTrabajos.map(t =>
+        t.id === Number(trabajoAsociadoId) ? { ...t, gastosExtra: t.gastosExtra + gastoCalculado } : t
       )
     );
 
-    // Sumar el costo/gasto extra al trabajo seleccionado (Opcional, según tu flujo)
-    const costoPorUnidad = productoSeleccionado.costoTotal / productoSeleccionado.cantidadComprada;
-    const gastoCalculado = Math.round(costoPorUnidad * cantidadRestar);
+    alert(`¡Aplicación exitosa! Se descontaron ${cantRestar} unidades de ${prod.nombre} y se cargaron $${gastoCalculado} de gasto al cliente.`);
     
-    setDatosMesActual((prev) => ({
-      ...prev,
-      trabajos: prev.trabajos.map((t) =>
-        t.id === Number(trabajoAsociadoId)
-          ? { ...t, gastosExtra: t.gastosExtra + gastoCalculado }
-          : t
-      ),
-    }));
-
-    // Resetear formulario
-    alert(`¡Aplicación registrada con éxito! Se descontaron ${cantidadRestar} unidades.`);
-    setProductoSeleccionado(null);
-    setCantidadUsada('');
+    // Limpiar formulario de químicos
+    setProductoSeleccionadoId('');
     setTrabajoAsociadoId('');
+    setCantidadUsada('');
   };
 
   return (
-    <main className="min-h-screen bg-[#030712] text-white p-4 md:p-8 space-y-10">
+    <main className="min-h-screen bg-[#030712] text-white p-4 md:p-8 space-y-8">
       
-      {/* SECCIÓN 1: CONTROL DE TRABAJOS MENSUALES */}
-      <div className="bg-[#111827] border border-gray-800 rounded-xl p-6 shadow-xl">
-        <h2 className="text-xl font-bold text-emerald-400 mb-4">Control de Trabajos e Ingresos</h2>
-        <div className="overflow-x-auto">
-          <table className="w-full text-left border-collapse">
-            <thead>
-              <tr className="border-b border-gray-800 text-gray-400 text-sm">
-                <th className="p-3">Cliente / Servicio</th>
-                <th className="p-3">Fecha</th>
-                <th className="p-3 text-right">Gastos Extra ($)</th>
-                <th className="p-3 text-right">Monto Cobrado ($)</th>
-                <th className="p-3 text-right">Ganancia Individual ($)</th>
-              </tr>
-            </thead>
-            <tbody>
-              {datosMesActual.trabajos.map((t) => {
-                const gananciaIndividual = t.montoCobrado - t.gastosExtra;
-                return (
-                  <tr key={t.id} className="border-b border-gray-800 hover:bg-gray-900/50 transition-colors">
-                    <td className="p-3">
-                      <div className="font-medium">{t.cliente}</div>
-                      <div className="text-xs text-gray-500">{t.servicio}</div>
-                    </td>
-                    <td className="p-3 text-sm text-gray-400">{t.fecha}</td>
-                    
-                    {/* Input Gastos Extra */}
-                    <td className="p-3 text-right">
-                      <input
-                        type="number"
-                        placeholder="0"
-                        value={t.gastosExtra || ''}
-                        onChange={(e) => editarTrabajo(t.id, 'gastosExtra', Number(e.target.value))}
-                        className="bg-transparent border-b border-transparent text-right hover:border-slate-600 focus:border-emerald-400 focus:outline-none w-24"
-                      />
-                    </td>
-
-                    {/* Input Monto Cobrado */}
-                    <td className="p-3 text-right">
-                      <input
-                        type="number"
-                        placeholder="0"
-                        value={t.montoCobrado || ''}
-                        onChange={(e) => editarTrabajo(t.id, 'montoCobrado', Number(e.target.value))}
-                        className="bg-transparent border-b border-transparent text-right hover:border-slate-600 focus:border-emerald-400 focus:outline-none w-24"
-                      />
-                    </td>
-
-                    {/* Cálculo de Ganancia */}
-                    <td className={`p-3 text-right font-bold ${gananciaIndividual >= 0 ? 'text-emerald-400' : 'text-rose-400'}`}>
-                      ${gananciaIndividual.toLocaleString('es-AR')}
-                    </td>
-                  </tr>
-                );
-              })}
-            </tbody>
-          </table>
+      {/* HEADER PRINCIPAL */}
+      <div className="flex justify-between items-center border-b border-gray-800 pb-4">
+        <div>
+          <h1 className="text-2xl font-bold text-white tracking-tight">SGA - Panel de Control</h1>
+          <p className="text-xs text-gray-400">Gestión de servicios, clientes e inventario de depósito.</p>
         </div>
       </div>
 
-      {/* SECCIÓN COMPUESTA: FORMULARIO + DEPOSITÓ */}
-      <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
+      {/* SECCIÓN 1: TRABAJOS (TABLA + FORMULARIO DE ALTA) */}
+      <div className="grid grid-cols-1 xl:grid-cols-4 gap-6">
         
-        {/* FORMULARIO PARA APLICAR Y DESCONTAR INSUMOS */}
-        <div className="bg-[#111827] border border-gray-800 p-6 rounded-xl shadow-xl lg:col-span-1">
-          <h3 className="text-lg font-bold text-emerald-400 mb-1">Registrar Uso de Químico</h3>
-          <p className="text-xs text-gray-400 mb-6">Descuenta stock físico y añade el costo al gasto del servicio.</p>
-          
-          <form onSubmit={handleRegistrarAplicacion} className="space-y-4">
-            <div>
-              <label className="block text-xs text-gray-400 mb-1">1. Seleccionar Insumo del Depósito</label>
-              <select
-                value={productoSeleccionado ? productoSeleccionado.id : ''}
-                onChange={(e) => {
-                  const prod = productos.find(p => p.id === Number(e.target.value));
-                  setProductoSeleccionado(prod || null);
-                  setCantidadUsada('');
-                }}
-                className="w-full bg-[#1F2937] border border-gray-700 rounded-lg p-2 text-sm text-white focus:ring-2 focus:ring-emerald-500 focus:outline-none"
-                required
-              >
-                <option value="">-- Seleccionar --</option>
-                {productos.map(p => (
-                  <option key={p.id} value={p.id}>{p.nombre} (Dispo: {p.stock_disponible})</option>
-                ))}
-              </select>
-            </div>
-
-            <div>
-              <label className="block text-xs text-gray-400 mb-1">2. Vincular al Trabajo de:</label>
-              <select
-                value={trabajoAsociadoId}
-                onChange={(e) => setTrabajoAsociadoId(e.target.value)}
-                className="w-full bg-[#1F2937] border border-gray-700 rounded-lg p-2 text-sm text-white focus:ring-2 focus:ring-emerald-500 focus:outline-none"
-                required
-              >
-                <option value="">-- Seleccionar Cliente --</option>
-                {datosMesActual.trabajos.map(t => (
-                  <option key={t.id} value={t.id}>{t.cliente}</option>
-                ))}
-              </select>
-            </div>
-
-            <div>
-              <label className="block text-xs text-gray-400 mb-1">3. Cantidad Utilizada</label>
-              <input
-                type="number"
-                placeholder={productoSeleccionado ? `Máximo ${productoSeleccionado.stock_disponible}` : "Elegí un químico"}
-                value={cantidadUsada}
-                disabled={!productoSeleccionado}
-                onChange={(e) => setCantidadUsada(e.target.value)}
-                className="w-full bg-[#1F2937] border border-gray-700 rounded-lg p-2 text-sm text-white focus:ring-2 focus:ring-emerald-500 focus:outline-none disabled:opacity-40"
-                required
-              />
-            </div>
-
-            {errorStock && (
-              <div className="bg-red-950/40 border border-red-600 text-red-400 text-xs p-2.5 rounded-lg font-medium">
-                {errorStock}
-              </div>
-            )}
-
-            <button
-              type="submit"
-              disabled={!!errorStock || !productoSeleccionado || !cantidadUsada || !trabajoAsociadoId}
-              className="w-full bg-[#10B981] hover:bg-[#059669] text-black font-bold p-2.5 rounded-lg text-sm transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
-            >
-              Aplicar y Restar Stock
-            </button>
-          </form>
-        </div>
-
-        {/* SECCIÓN 2: TU TABLA DE DEPÓSITO DE QUÍMICOS (VISTA EN TU CAPTURA) */}
-        <div className="bg-[#111827] border border-gray-800 rounded-xl p-6 shadow-xl lg:col-span-2">
-          <div className="flex justify-between items-center mb-4">
-            <div>
-              <h2 className="text-xl font-bold text-white">Depósito de Químicos y Materiales</h2>
-              <p className="text-xs text-gray-400">El stock disponible bajará solo según lo gastado en los servicios.</p>
-            </div>
-            <button className="bg-[#10B981] hover:bg-[#059669] text-black text-xs font-bold px-3 py-2 rounded-lg transition-colors">
-              + Registrar Nueva Compra
-            </button>
-          </div>
-
+        {/* TABLA DE CONTROL MENSUAL */}
+        <div className="bg-[#111827] border border-gray-800 rounded-xl p-5 shadow-xl xl:col-span-3">
+          <h2 className="text-lg font-bold text-emerald-400 mb-4">Control de Trabajos e Ingresos</h2>
           <div className="overflow-x-auto">
             <table className="w-full text-left border-collapse text-sm">
               <thead>
                 <tr className="border-b border-gray-800 text-gray-400">
-                  <th className="p-3">DETALLE DEL PRODUCTO</th>
-                  <th className="p-3 text-center">CANTIDAD COMPRADA</th>
-                  <th className="p-3 text-center">STOCK DISPONIBLE</th>
-                  <th className="p-3 text-right">COSTO TOTAL COMPRA ($)</th>
+                  <th className="p-3">Cliente / Servicio</th>
+                  <th className="p-3">Fecha</th>
+                  <th className="p-3 text-right">Gastos Extra ($)</th>
+                  <th className="p-3 text-right">Monto Cobrado ($)</th>
+                  <th className="p-3 text-right">Ganancia ($)</th>
+                </tr>
+              </thead>
+              <tbody>
+                {trabajos.map((t) => {
+                  const ganancia = t.montoCobrado - t.gastosExtra;
+                  return (
+                    <tr key={t.id} className="border-b border-gray-800 hover:bg-gray-900/40 transition-colors">
+                      <td className="p-3">
+                        <div className="font-semibold text-gray-200">{t.cliente}</div>
+                        <div className="text-xs text-gray-500">{t.servicio}</div>
+                      </td>
+                      <td className="p-3 text-gray-400 text-xs">{t.fecha}</td>
+                      
+                      {/* Gasto Extra Editable */}
+                      <td className="p-3 text-right">
+                        <input
+                          type="number"
+                          value={t.gastosExtra || ''}
+                          placeholder="0"
+                          onChange={(e) => editarTrabajoInline(t.id, 'gastosExtra', Number(e.target.value))}
+                          className="bg-transparent border-b border-transparent text-right hover:border-gray-600 focus:border-emerald-400 focus:outline-none w-24 text-gray-300"
+                        />
+                      </td>
+
+                      {/* Monto Cobrado Editable */}
+                      <td className="p-3 text-right">
+                        <input
+                          type="number"
+                          value={t.montoCobrado || ''}
+                          placeholder="0"
+                          onChange={(e) => editarTrabajoInline(t.id, 'montoCobrado', Number(e.target.value))}
+                          className="bg-transparent border-b border-transparent text-right hover:border-gray-600 focus:border-emerald-400 focus:outline-none w-24 text-gray-300"
+                        />
+                      </td>
+
+                      {/* Ganancia Calculada */}
+                      <td className={`p-3 text-right font-bold ${ganancia >= 0 ? 'text-emerald-400' : 'text-rose-400'}`}>
+                        ${ganancia.toLocaleString('es-AR')}
+                      </td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
+          </div>
+        </div>
+
+        {/* FORMULARIO: NUEVO CLIENTE / TRABAJO */}
+        <div className="bg-[#111827] border border-gray-800 p-5 rounded-xl shadow-xl xl:col-span-1">
+          <h3 className="text-base font-bold text-emerald-400 mb-1">Agregar Nuevo Trabajo</h3>
+          <p className="text-xs text-gray-400 mb-4">Registrá un cliente nuevo en la lista mensual.</p>
+          
+          <form onSubmit={handleAgregarTrabajo} className="space-y-3.5">
+            <div>
+              <label className="block text-xs text-gray-400 mb-1">Nombre del Cliente</label>
+              <input
+                type="text"
+                placeholder="Ej: Consorcio Mitre"
+                value={nuevoCliente}
+                onChange={(e) => setNuevoCliente(e.target.value)}
+                className="w-full bg-[#1F2937] border border-gray-700 rounded-lg p-2 text-sm text-white focus:ring-2 focus:ring-emerald-500 focus:outline-none"
+                required
+              />
+            </div>
+            <div>
+              <label className="block text-xs text-gray-400 mb-1">Tipo de Servicio</label>
+              <input
+                type="text"
+                placeholder="Ej: Fumigación General"
+                value={nuevoServicio}
+                onChange={(e) => setNuevoServicio(e.target.value)}
+                className="w-full bg-[#1F2937] border border-gray-700 rounded-lg p-2 text-sm text-white focus:ring-2 focus:ring-emerald-500 focus:outline-none"
+                required
+              />
+            </div>
+            <div>
+              <label className="block text-xs text-gray-400 mb-1">Monto a Cobrar ($)</label>
+              <input
+                type="number"
+                placeholder="Ej: 50000"
+                value={nuevoMonto}
+                onChange={(e) => setNuevoMonto(e.target.value)}
+                className="w-full bg-[#1F2937] border border-gray-700 rounded-lg p-2 text-sm text-white focus:ring-2 focus:ring-emerald-500 focus:outline-none"
+              />
+            </div>
+            <button
+              type="submit"
+              className="w-full bg-[#10B981] hover:bg-[#059669] text-black font-bold p-2 rounded-lg text-sm transition-colors mt-2"
+            >
+              + Agregar a la Lista
+            </button>
+          </form>
+        </div>
+      </div>
+
+      {/* SECCIÓN 2: DEPÓSITO (TABLA FÍSICA + APLICADOR DE QUÍMICOS) */}
+      <div className="grid grid-cols-1 xl:grid-cols-4 gap-6">
+        
+        {/* TABLA DE PRODUCTOS EN DEPÓSITO */}
+        <div className="bg-[#111827] border border-gray-800 rounded-xl p-5 shadow-xl xl:col-span-3">
+          <h2 className="text-lg font-bold text-white mb-1">Depósito de Químicos y Materiales</h2>
+          <p className="text-xs text-gray-400 mb-4">Inventario real disponible en stock.</p>
+          
+          <div className="overflow-x-auto">
+            <table className="w-full text-left border-collapse text-sm">
+              <thead>
+                <tr className="border-b border-gray-800 text-gray-400">
+                  <th className="p-3">Detalle del Insumo</th>
+                  <th className="p-3 text-center">Comprados</th>
+                  <th className="p-3 text-center">Stock Disponible</th>
+                  <th className="p-3 text-right">Costo Total Compra</th>
                 </tr>
               </thead>
               <tbody>
                 {productos.map((prod) => (
-                  <tr key={prod.id} className="border-b border-gray-800 hover:bg-gray-900/40 transition-colors">
+                  <tr key={prod.id} className="border-b border-gray-800 hover:bg-gray-900/30 transition-colors">
                     <td className="p-3 font-medium text-gray-200">{prod.nombre}</td>
-                    <td className="p-3 text-center text-gray-300">{prod.cantidadComprada}</td>
+                    <td className="p-3 text-center text-gray-400">{prod.cantidadComprada}</td>
                     <td className="p-3 text-center">
-                      <span className={`px-2 py-1 rounded-full text-xs font-semibold ${
+                      <span className={`px-2 py-0.5 rounded-full text-xs font-semibold ${
                         prod.stock_disponible === prod.cantidadComprada 
                           ? 'bg-emerald-950/60 text-emerald-400 border border-emerald-800' 
                           : 'bg-amber-950/60 text-amber-400 border border-amber-800'
@@ -278,6 +286,78 @@ export default function DashboardSGA() {
               </tbody>
             </table>
           </div>
+        </div>
+
+        {/* FORMULARIO: APLICAR QUÍMICO CON CANDADO */}
+        <div className="bg-[#111827] border border-gray-800 p-5 rounded-xl shadow-xl xl:col-span-1">
+          <h3 className="text-base font-bold text-emerald-400 mb-1">Registrar Uso de Químico</h3>
+          <p className="text-xs text-gray-400 mb-4">Descuenta stock físico y asocia el gasto al cliente elegido.</p>
+          
+          <form onSubmit={handleRegistrarAplicacion} className="space-y-3.5">
+            {/* Selector de Insumo */}
+            <div>
+              <label className="block text-xs text-gray-400 mb-1">1. Elegir Químico</label>
+              <select
+                value={productoSeleccionadoId}
+                onChange={(e) => {
+                  setProductoSeleccionadoId(e.target.value);
+                  setCantidadUsada('');
+                }}
+                className="w-full bg-[#1F2937] border border-gray-700 rounded-lg p-2 text-sm text-white focus:ring-2 focus:ring-emerald-500 focus:outline-none"
+                required
+              >
+                <option value="">-- Seleccionar --</option>
+                {productos.map(p => (
+                  <option key={p.id} value={p.id}>{p.nombre} (Dispo: {p.stock_disponible})</option>
+                ))}
+              </select>
+            </div>
+
+            {/* Selector de Trabajo Vinculado */}
+            <div>
+              <label className="block text-xs text-gray-400 mb-1">2. Vincular a Trabajo de:</label>
+              <select
+                value={trabajoAsociadoId}
+                onChange={(e) => setTrabajoAsociadoId(e.target.value)}
+                className="w-full bg-[#1F2937] border border-gray-700 rounded-lg p-2 text-sm text-white focus:ring-2 focus:ring-emerald-500 focus:outline-none"
+                required
+              >
+                <option value="">-- Seleccionar Cliente --</option>
+                {trabajos.map(t => (
+                  <option key={t.id} value={t.id}>{t.cliente} ({t.servicio})</option>
+                ))}
+              </select>
+            </div>
+
+            {/* Input Cantidad */}
+            <div>
+              <label className="block text-xs text-gray-400 mb-1">3. Cantidad Utilizada</label>
+              <input
+                type="number"
+                placeholder={productoSeleccionadoId ? "Ingresá cantidad" : "Elegí un químico primero"}
+                value={cantidadUsada}
+                disabled={!productoSeleccionadoId}
+                onChange={(e) => setCantidadUsada(e.target.value)}
+                className="w-full bg-[#1F2937] border border-gray-700 rounded-lg p-2 text-sm text-white focus:ring-2 focus:ring-emerald-500 focus:outline-none disabled:opacity-40"
+                required
+              />
+            </div>
+
+            {/* Alerta del Candado de Validación */}
+            {errorStock && (
+              <div className="bg-red-950/40 border border-red-600 text-red-400 text-xs p-2.5 rounded-lg font-medium">
+                {errorStock}
+              </div>
+            )}
+
+            <button
+              type="submit"
+              disabled={!!errorStock || !productoSeleccionadoId || !cantidadUsada || !trabajoAsociadoId}
+              className="w-full bg-[#10B981] hover:bg-[#059669] text-black font-bold p-2 rounded-lg text-sm transition-colors disabled:opacity-40 disabled:cursor-not-allowed mt-2"
+            >
+              Aplicar y Restar Stock
+            </button>
+          </form>
         </div>
 
       </div>
