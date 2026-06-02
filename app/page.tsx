@@ -38,23 +38,23 @@ export default function DashboardSGA() {
   }, []);
 
   const [tabActiva, setTabActiva] = useState<'stock' | 'trabajos'>('stock');
-  const [mesActual, setMesActual] = useState<string>('2026-05');
+  const [mesActual, setMesActual] = useState<string>('2026-06');
 
-  // Estado maestro con datos iniciales vinculados de ejemplo
+  // Estado maestro inicializado por mes
   const [datosPorMes, setDatosPorMes] = useState<DatosMensuales>({
     '2026-05': {
       stock: [
-        { id: 'prod-1', nombre: 'Gel Cucarachicida x40g', cantidad: 5, costoTotal: 25000 }, // Cada uno sale $5.000
-        { id: 'prod-2', nombre: 'Líquido Deltametrina 1L', cantidad: 3, costoTotal: 48000 }  // Cada uno sale $16.000
+        { id: 'prod-1', nombre: 'Gel Cucarachicida x40g', cantidad: 5, costoTotal: 25000 }, 
+        { id: 'prod-2', nombre: 'Líquido Deltametrina 1L', cantidad: 3, costoTotal: 48000 }  
       ],
       trabajos: [
         { 
           id: 'trab-1', 
           fecha: '2026-05-28',
-          cliente: 'Industria A', 
-          servicio: 'Control Integral', 
-          productoId: 'prod-2', // Usa Deltametrina
-          cantidadUsada: 1,      // Gasta 1 Litro ($16.000)
+          cliente: 'Consorcio Mitre', 
+          servicio: 'Desinsectación', 
+          productoId: 'prod-2', 
+          cantidadUsada: 1,      
           combustible: 12000, 
           manoObra: 35000, 
           otrosCostos: 8000, 
@@ -63,7 +63,13 @@ export default function DashboardSGA() {
         }
       ]
     },
-    '2026-06': { stock: [], trabajos: [] },
+    '2026-06': { 
+      stock: [
+        { id: 'prod-1', nombre: 'Gel Cucarachicida x40g', cantidad: 5, costoTotal: 25000 }, 
+        { id: 'prod-2', nombre: 'Líquido Deltametrina 1L', cantidad: 3, costoTotal: 48000 }
+      ], 
+      trabajos: [] 
+    },
     '2026-07': { stock: [], trabajos: [] }
   });
 
@@ -79,13 +85,13 @@ export default function DashboardSGA() {
 
   const datosMesActual = datosPorMes[mesActual] || { stock: [], trabajos: [] };
 
-  // --- 🧮 CALCULADORA DE DESCUENTOS Y UNIDADES USADAS ---
+  // --- 🧮 CALCULADORA DE UNIDADES CONSUMIDAS EN TIEMPO REAL ---
   const getUnidadesConsumidas = (productoId: string) => {
     return datosMesActual.trabajos
       .reduce((sum, t) => t.productoId === productoId ? sum + (Number(t.cantidadUsada) || 0) : sum, 0);
   };
 
-  // --- 📈 CALCULADORA MAESTRA FINANCIERA ---
+  // --- 📈 CALCULADORAS FINANCIERAS GLOBALES ---
   const totalGastosStock = datosMesActual.stock.reduce((sum, item) => sum + (Number(item.costoTotal) || 0), 0);
   
   const totalGastosOperativos = datosMesActual.trabajos.reduce((sum, t) => {
@@ -93,88 +99,140 @@ export default function DashboardSGA() {
   }, 0);
 
   const totalFacturado = datosMesActual.trabajos.reduce((sum, t) => sum + (Number(t.precioCobrado) || 0), 0);
-  
-  // Utilidad Neta Real = Lo cobrado menos lo invertido en galpón/stock y los viajes
   const gananciaNetaMensual = totalFacturado - (totalGastosStock + totalGastosOperativos);
 
-  // --- 🛠️ CONTROLADORES DE BASE DE DATOS LOCAL ---
-  const guardarDatosMes = (tipo: 'stock' | 'trabajos', nuevaLista: any[]) => {
-    setDatosPorMes(prev => ({
-      ...prev,
-      [mesActual]: {
-        ...prev[mesActual],
-        [tipo]: nuevaLista
-      }
-    }));
-  };
+  // --- 🛠️ CONTROLADORES ATÓMICOS DE ESTADO (FUNCIONALES) ---
 
-  // Acciones de Stock
   const agregarItemStock = () => {
-    const nuevo: ItemStock = { id: `prod-${Date.now()}`, nombre: '', cantidad: 0, costoTotal: 0 };
-    guardarDatosMes('stock', [...datosMesActual.stock, nuevo]);
+    setDatosPorMes(prev => {
+      const mesData = prev[mesActual] || { stock: [], trabajos: [] };
+      const nuevo: ItemStock = { id: `prod-${Date.now()}`, nombre: '', cantidad: 0, costoTotal: 0 };
+      return {
+        ...prev,
+        [mesActual]: { ...mesData, stock: [...mesData.stock, nuevo] }
+      };
+    });
   };
 
   const editarItemStock = (id: string, campo: keyof ItemStock, valor: any) => {
-    const modificados = datosMesActual.stock.map(item => 
-      item.id === id ? { ...item, [campo]: campo === 'nombre' ? valor : Number(valor) } : item
-    );
-    guardarDatosMes('stock', modificados);
+    setDatosPorMes(prev => {
+      const mesData = prev[mesActual] || { stock: [], trabajos: [] };
+      const modificados = mesData.stock.map(item => 
+        item.id === id ? { ...item, [campo]: campo === 'nombre' ? valor : Number(valor) } : item
+      );
+      return {
+        ...prev,
+        [mesActual]: { ...mesData, stock: modificados }
+      };
+    });
   };
 
   const eliminarItemStock = (id: string) => {
-    // Si borramos el producto, desvinculamos los trabajos que lo usaban
-    const stockFiltrado = datosMesActual.stock.filter(item => item.id !== id);
-    const trabajosLimpios = datosMesActual.trabajos.map(t => t.productoId === id ? { ...t, productoId: '', cantidadUsada: 0 } : t);
-    
-    setDatosPorMes(prev => ({
-      ...prev,
-      [mesActual]: {
-        stock: stockFiltrado,
-        trabajos: trabajosLimpios
-      }
-    }));
-  };
-
-  // Acciones de Trabajos
-  const agregarTrabajo = () => {
-    const nuevo: TrabajoFumigacion = {
-      id: `trab-${Date.now()}`,
-      fecha: new Date().toISOString().split('T')[0],
-      cliente: '',
-      servicio: '',
-      productoId: '', 
-      cantidadUsada: 0,
-      combustible: 0,
-      manoObra: 0,
-      otrosCostos: 0,
-      precioCobrado: 0,
-      estado: 'Pendiente'
-    };
-    guardarDatosMes('trabajos', [...datosMesActual.trabajos, nuevo]);
-  };
-
-  const editarTrabajo = (id: string, campo: keyof TrabajoFumigacion, valor: any) => {
-    const modificados = datosMesActual.trabajos.map(t => {
-      if (t.id === id) {
-        if (['cliente', 'servicio', 'fecha', 'estado', 'productoId'].includes(campo)) {
-          return { ...t, [campo]: valor };
-        }
-        return { ...t, [campo]: Number(valor) };
-      }
-      return t;
+    setDatosPorMes(prev => {
+      const mesData = prev[mesActual] || { stock: [], trabajos: [] };
+      const stockFiltrado = mesData.stock.filter(item => item.id !== id);
+      const trabajosLimpios = mesData.trabajos.map(t => 
+        t.productoId === id ? { ...t, productoId: '', cantidadUsada: 0 } : t
+      );
+      return {
+        ...prev,
+        [mesActual]: { stock: stockFiltrado, trabajos: trabajosLimpios }
+      };
     });
-    guardarDatosMes('trabajos', modificados);
+  };
+
+  const agregarTrabajo = () => {
+    setDatosPorMes(prev => {
+      const mesData = prev[mesActual] || { stock: [], trabajos: [] };
+      const nuevo: TrabajoFumigacion = {
+        id: `trab-${Date.now()}`,
+        fecha: new Date().toISOString().split('T')[0],
+        cliente: '',
+        servicio: '',
+        productoId: '', 
+        cantidadUsada: 0,
+        combustible: 0,
+        manoObra: 0,
+        otrosCostos: 0,
+        precioCobrado: 0,
+        estado: 'Pendiente'
+      };
+      return {
+        ...prev,
+        [mesActual]: { ...mesData, trabajos: [...mesData.trabajos, nuevo] }
+      };
+    });
+  };
+
+  // 🔒 CONTROLADOR DE EDICIÓN CON CANDADO INTEGRADO ANTI-RACE CONDITIONS
+  const editarTrabajo = (id: string, campo: keyof TrabajoFumigacion, valor: any) => {
+    setDatosPorMes(prev => {
+      const mesData = prev[mesActual] || { stock: [], trabajos: [] };
+      
+      const nuevosTrabajos = mesData.trabajos.map(t => {
+        if (t.id === id) {
+          // Creamos una copia base con el nuevo cambio solicitado
+          let trabajoActualizado = { ...t, [campo]: valor };
+
+          // 🌟 SI SE CAMBIA EL PRODUCTO: Reseteamos la cantidad usada en la misma operación atómica
+          if (campo === 'productoId') {
+            trabajoActualizado.cantidadUsada = 0;
+          }
+
+          // VALIDACIÓN DE SEGURIDAD BASADA EN EL ESTADO FRESCO 'PREV'
+          if (campo === 'cantidadUsada' || campo === 'productoId') {
+            const productoAsociado = mesData.stock.find(s => s.id === trabajoActualizado.productoId);
+            
+            if (productoAsociado) {
+              // Calculamos lo consumido por las OTRAS filas de este mes
+              const consumidosOtros = mesData.trabajos
+                .filter(trab => trab.id !== id && trab.productoId === trabajoActualizado.productoId)
+                .reduce((sum, trab) => sum + (Number(trab.cantidadUsada) || 0), 0);
+              
+              const maxPermitido = productoAsociado.cantidad - consumidosOtros;
+              const numValor = Number(trabajoActualizado.cantidadUsada) || 0;
+
+              if (numValor > maxPermitido) {
+                trabajoActualizado.cantidadUsada = maxPermitido;
+              } else if (numValor < 0) {
+                trabajoActualizado.cantidadUsada = 0;
+              } else {
+                trabajoActualizado.cantidadUsada = numValor;
+              }
+            } else {
+              // Si no hay producto seleccionado, la cantidad obligatoriamente cae a 0
+              trabajoActualizado.cantidadUsada = 0;
+            }
+          } else if (['combustible', 'manoObra', 'otrosCostos', 'precioCobrado'].includes(campo as string)) {
+            trabajoActualizado[campo] = Number(valor) || 0;
+          }
+
+          return trabajoActualizado;
+        }
+        return t;
+      });
+
+      return {
+        ...prev,
+        [mesActual]: { ...mesData, trabajos: nuevosTrabajos }
+      };
+    });
   };
 
   const eliminarTrabajo = (id: string) => {
-    const filtrados = datosMesActual.trabajos.filter(t => t.id !== id);
-    guardarDatosMes('trabajos', filtrados);
+    setDatosPorMes(prev => {
+      const mesData = prev[mesActual] || { stock: [], trabajos: [] };
+      return {
+        ...prev,
+        [mesActual]: { ...mesData, trabajos: mesData.trabajos.filter(t => t.id !== id) }
+      };
+    });
   };
 
   return (
     <div className="min-h-screen bg-slate-900 text-slate-100 p-4 md:p-8 font-sans">
       
-      {/* CARD PRINCIPAL DE CONTROL */}
+      {/* ENCABEZADO PRINCIPAL */}
       <div className="flex flex-col lg:flex-row justify-between items-start lg:items-center gap-4 mb-8 bg-slate-800 p-6 rounded-2xl border border-slate-700 shadow-xl">
         <div>
           <h1 className="text-3xl font-extrabold text-emerald-400 tracking-wide">SGA Conectado</h1>
@@ -194,7 +252,7 @@ export default function DashboardSGA() {
         </div>
       </div>
 
-      {/* BLOQUE DE NÚMEROS GLOBALES */}
+      {/* MÉTRICAS FINANCIERAS */}
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 mb-8">
         <div className="bg-slate-800 p-5 rounded-2xl border border-slate-700 shadow-md">
           <p className="text-xs font-bold uppercase tracking-wider text-slate-400">Facturación Total</p>
@@ -216,7 +274,7 @@ export default function DashboardSGA() {
         </div>
       </div>
 
-      {/* TABS DE SECCIÓN */}
+      {/* PANELES / TABS */}
       <div className="flex gap-2 p-1 bg-slate-950 rounded-xl mb-6 max-w-md border border-slate-800">
         <button
           type="button"
@@ -234,14 +292,14 @@ export default function DashboardSGA() {
         </button>
       </div>
 
-      {/* CONTENIDO INTERCONECTADO */}
+      {/* SECCIÓN ACTIVA */}
       {tabActiva === 'stock' ? (
-        /* ================= VISTA STOCK ================= */
+        /* VISTA STOCK */
         <div className="bg-slate-800 rounded-2xl border border-slate-700 shadow-xl p-6">
           <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4 mb-6">
             <div>
               <h2 className="text-xl font-bold text-slate-200">Depósito de Químicos y Materiales</h2>
-              <p className="text-xs text-slate-400">Registrá las compras mayoristas. El stock disponible bajará solo según lo gastado en los servicios.</p>
+              <p className="text-xs text-slate-400">Registrá tus compras. El stock disponible bajará solo de acuerdo a lo gastado en la agenda.</p>
             </div>
             <button 
               type="button"
@@ -288,7 +346,6 @@ export default function DashboardSGA() {
                           className="bg-transparent border-b border-slate-700 text-center focus:border-emerald-400 focus:bg-slate-900 px-2 py-1 rounded text-slate-100 w-24 outline-none"
                         />
                       </td>
-                      {/* INDICADOR DINÁMICO DE STOCK DISPONIBLE */}
                       <td className="p-3 text-center font-bold">
                         {disponible <= 0 ? (
                           <span className="bg-rose-500/20 text-rose-400 px-2.5 py-1 rounded-full text-xs border border-rose-500/30">⚠️ Agotado</span>
@@ -329,12 +386,12 @@ export default function DashboardSGA() {
           </div>
         </div>
       ) : (
-        /* ================= VISTA TRABAJOS & AGENDA ================= */
+        /* VISTA TRABAJOS */
         <div className="bg-slate-800 rounded-2xl border border-slate-700 shadow-xl p-6">
           <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4 mb-6">
             <div>
               <h2 className="text-xl font-bold text-slate-200">Hoja de Ruta y Desglose Financiero</h2>
-              <p className="text-xs text-slate-400">Seleccioná qué insumo del depósito gastaste y la cantidad. Los costos se calculan solos.</p>
+              <p className="text-xs text-slate-400">Seleccioná qué insumo utilizaste de la lista. Las cantidades se validan solas contra tu stock real.</p>
             </div>
             <button 
               type="button"
@@ -366,17 +423,18 @@ export default function DashboardSGA() {
               </thead>
               <tbody className="divide-y divide-slate-700/50">
                 {datosMesActual.trabajos.map((t) => {
-                  // 🧠 CÁLCULOS LOGICIALES POR FILA
                   const productoAsociado = datosMesActual.stock.find(s => s.id === t.productoId);
                   
-                  // Precio Unitario = Costo Total Compra / Cantidad Comprada
+                  const consumidosOtros = productoAsociado 
+                    ? getUnidadesConsumidas(t.productoId) - (Number(t.cantidadUsada) || 0)
+                    : 0;
+                  const maxPermitido = productoAsociado ? (productoAsociado.cantidad - consumidosOtros) : 0;
+
                   const precioUnitarioInsumo = productoAsociado && productoAsociado.cantidad > 0 
                     ? (productoAsociado.costoTotal / productoAsociado.cantidad) 
                     : 0;
                   
-                  // Costo Insumo de la Fila = Precio Unitario * Cantidad Usada en este servicio
                   const costoInsumoCalculado = precioUnitarioInsumo * (Number(t.cantidadUsada) || 0);
-
                   const costosTotalesFila = costoInsumoCalculado + Number(t.combustible) + Number(t.manoObra) + Number(t.otrosCostos);
                   const gananciaFila = Number(t.precioCobrado) - costosTotalesFila;
 
@@ -431,16 +489,12 @@ export default function DashboardSGA() {
                         </select>
                       </td>
 
-                      {/* 🔄 SELECTOR DINÁMICO DE PRODUCTOS DE STOCK */}
+                      {/* SELECTOR DE PRODUCTO ATÓMICO */}
                       <td className="p-3">
                         <select
                           value={t.productoId}
-                          onChange={(e) => {
-                            editarTrabajo(t.id, 'productoId', e.target.value);
-                            // Reseteamos cantidad usada al cambiar de producto para evitar errores
-                            editarTrabajo(t.id, 'cantidadUsada', 0);
-                          }}
-                          className="bg-slate-900 border border-slate-700 text-xs rounded p-1 text-slate-300 outline-none w-full focus:border-blue-400"
+                          onChange={(e) => editarTrabajo(t.id, 'productoId', e.target.value)}
+                          className="bg-slate-900 border border-slate-700 text-xs rounded p-1 text-slate-300 outline-none w-full focus:border-blue-400 cursor-pointer"
                         >
                           <option value="">-- Ninguno / Sin Insumo --</option>
                           {datosMesActual.stock.map(item => (
@@ -456,14 +510,16 @@ export default function DashboardSGA() {
                         <input 
                           type="number" 
                           placeholder="0"
-                          disabled={!t.productoId} // Deshabilitado si no eligió producto primero
+                          min={0}
+                          max={productoAsociado ? maxPermitido : undefined}
+                          disabled={!t.productoId} 
                           value={t.cantidadUsada || ''}
                           onChange={(e) => editarTrabajo(t.id, 'cantidadUsada', e.target.value)}
                           className="bg-transparent border-b border-slate-700 text-center focus:border-blue-400 focus:bg-slate-900 px-1 py-1 rounded text-slate-100 w-12 outline-none text-xs disabled:opacity-30 disabled:border-transparent"
                         />
                       </td>
 
-                      {/* COSTO AUTOMÁTICO DE INSUMO EN ESTA FILA */}
+                      {/* COSTO AUTOMÁTICO DE INSUMO */}
                       <td className="p-3 text-right font-semibold text-rose-400 text-xs">
                         ${costoInsumoCalculado.toLocaleString('es-AR')}
                       </td>
