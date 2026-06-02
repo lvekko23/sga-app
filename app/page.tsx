@@ -34,7 +34,7 @@ export default function DashboardSGA() {
   const [tabActiva, setTabActiva] = useState<'stock' | 'trabajos'>('stock');
   const [mesActual, setMesActual] = useState<string>('2026-06');
 
-  // --- ESTADOS GLOBALES PLANOS (Adiós a los objetos anidados problemáticos) ---
+  // --- ESTADOS GLOBALES PLANOS ---
   const [stock, setStock] = useState<ItemStock[]>([
     { id: 'prod-1', fecha: '2026-05-10', nombre: 'Gel Cucarachicida x40g', cantidad: 5, costoTotal: 25000 },
     { id: 'prod-2', fecha: '2026-05-15', nombre: 'Líquido Deltametrina 1L', cantidad: 3, costoTotal: 48000 },
@@ -85,7 +85,7 @@ export default function DashboardSGA() {
   const totalFacturado = trabajosFiltrados.reduce((sum, t) => sum + (Number(t.precioCobrado) || 0), 0);
   const gananciaNetaMensual = totalFacturado - (totalGastosStock + totalGastosOperativos);
 
-  // --- CONTROLADORES DE INVENTARIO (ACCIONES ACCESIBLES) ---
+  // --- CONTROLADORES DE INVENTARIO ---
   const agregarItemStock = () => {
     const hoy = new Date().toISOString().split('T')[0];
     const fechaInicial = hoy.startsWith(mesActual) ? hoy : `${mesActual}-01`;
@@ -101,9 +101,18 @@ export default function DashboardSGA() {
   };
 
   const editarItemStock = (id: string, campo: keyof ItemStock, valor: any) => {
-    setStock(prev => prev.map(item =>
-      item.id === id ? { ...item, [campo]: campo === 'nombre' || campo === 'fecha' ? valor : Number(valor) } : item
-    ));
+    setStock(prev => prev.map(item => {
+      if (item.id === id) {
+        const itemActualizado = { ...item };
+        if (campo === 'nombre' || campo === 'fecha') {
+          (itemActualizado as any)[campo] = valor;
+        } else {
+          (itemActualizado as any)[campo] = Number(valor) || 0;
+        }
+        return itemActualizado;
+      }
+      return item;
+    }));
   };
 
   const eliminarItemStock = (id: string) => {
@@ -111,7 +120,7 @@ export default function DashboardSGA() {
     setTrabajos(prev => prev.map(t => t.productoId === id ? { ...t, productoId: '', cantidadUsada: 0 } : t));
   };
 
-  // --- CONTROLADORES DE TRABAJOS (BLINDADOS ANTI-BLOQUEOS) ---
+  // --- CONTROLADORES DE TRABAJOS ---
   const agregarTrabajo = () => {
     const hoy = new Date().toISOString().split('T')[0];
     const fechaInicial = hoy.startsWith(mesActual) ? hoy : `${mesActual}-01`;
@@ -166,7 +175,8 @@ export default function DashboardSGA() {
             trabajoActualizado.cantidadUsada = 0;
           }
         } else if (['combustible', 'manoObra', 'otrosCostos', 'precioCobrado'].includes(campo as string)) {
-          trabajoActualizado[campo] = Number(valor) || 0;
+          // Solución al error de Vercel: Se castea como 'any' para evitar el tipo 'never'
+          (trabajoActualizado as any)[campo] = Number(valor) || 0;
         }
 
         return trabajoActualizado;
