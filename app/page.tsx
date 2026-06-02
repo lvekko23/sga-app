@@ -5,30 +5,24 @@ import React, { useState, useEffect } from 'react';
 // --- INTERFACES DE TIPADO ---
 interface ItemStock {
   id: string;
+  fecha: string; // YYYY-MM-DD para saber en qué mes impacta el gasto
   nombre: string;
   cantidad: number; // Cantidad total comprada
-  costoTotal: number; // Costo de la compra mayorista
+  costoTotal: number; // Costo total de la compra
 }
 
 interface TrabajoFumigacion {
   id: string;
-  fecha: string;
+  fecha: string; // YYYY-MM-DD
   cliente: string;
   servicio: string;
-  productoId: string; // ID del producto de stock seleccionado
-  cantidadUsada: number; // Cuántas unidades se consumieron
+  productoId: string; // Enlace directo al ID de stock global
+  cantidadUsada: number; 
   combustible: number;
   manoObra: number;
   otrosCostos: number;
   precioCobrado: number;
   estado: 'Pendiente' | 'Completado' | 'Cancelado';
-}
-
-interface DatosMensuales {
-  [mes: string]: {
-    stock: ItemStock[];
-    trabajos: TrabajoFumigacion[];
-  };
 }
 
 export default function DashboardSGA() {
@@ -40,234 +34,190 @@ export default function DashboardSGA() {
   const [tabActiva, setTabActiva] = useState<'stock' | 'trabajos'>('stock');
   const [mesActual, setMesActual] = useState<string>('2026-06');
 
-  // Estado maestro inicializado por mes
-  const [datosPorMes, setDatosPorMes] = useState<DatosMensuales>({
-    '2026-05': {
-      stock: [
-        { id: 'prod-1', nombre: 'Gel Cucarachicida x40g', cantidad: 5, costoTotal: 25000 }, 
-        { id: 'prod-2', nombre: 'Líquido Deltametrina 1L', cantidad: 3, costoTotal: 48000 }  
-      ],
-      trabajos: [
-        { 
-          id: 'trab-1', 
-          fecha: '2026-05-28',
-          cliente: 'Consorcio Mitre', 
-          servicio: 'Desinsectación', 
-          productoId: 'prod-2', 
-          cantidadUsada: 1,      
-          combustible: 12000, 
-          manoObra: 35000, 
-          otrosCostos: 8000, 
-          precioCobrado: 120000,
-          estado: 'Completado'
-        }
-      ]
-    },
-    '2026-06': { 
-      stock: [
-        { id: 'prod-1', nombre: 'Gel Cucarachicida x40g', cantidad: 5, costoTotal: 25000 }, 
-        { id: 'prod-2', nombre: 'Líquido Deltametrina 1L', cantidad: 3, costoTotal: 48000 }
-      ], 
-      trabajos: [] 
-    },
-    '2026-07': { stock: [], trabajos: [] }
-  });
+  // --- ESTADOS GLOBALES PLANOS (Adiós a los objetos anidados problemáticos) ---
+  const [stock, setStock] = useState<ItemStock[]>([
+    { id: 'prod-1', fecha: '2026-05-10', nombre: 'Gel Cucarachicida x40g', cantidad: 5, costoTotal: 25000 },
+    { id: 'prod-2', fecha: '2026-05-15', nombre: 'Líquido Deltametrina 1L', cantidad: 3, costoTotal: 48000 },
+    { id: 'prod-3', fecha: '2026-06-01', nombre: 'Gel Cucarachicida x40g', cantidad: 10, costoTotal: 50000 },
+    { id: 'prod-4', fecha: '2026-06-02', nombre: 'Líquido Deltametrina 1L', cantidad: 4, costoTotal: 64000 }
+  ]);
+
+  const [trabajos, setTrabajos] = useState<TrabajoFumigacion[]>([
+    {
+      id: 'trab-1',
+      fecha: '2026-05-28',
+      cliente: 'Consorcio Mitre',
+      servicio: 'Desinsectación',
+      productoId: 'prod-2',
+      cantidadUsada: 1,
+      combustible: 12000,
+      manoObra: 35000,
+      otrosCostos: 8000,
+      precioCobrado: 120000,
+      estado: 'Completado'
+    }
+  ]);
 
   if (!mounted) {
     return (
       <div className="min-h-screen bg-slate-900 text-slate-100 p-8 flex items-center justify-center font-sans">
         <div className="text-center">
-          <p className="text-xl font-bold text-emerald-400 animate-pulse">Conectando Stock y Agenda...</p>
+          <p className="text-xl font-bold text-emerald-400 animate-pulse">Cargando base de datos unificada...</p>
         </div>
       </div>
     );
   }
 
-  const datosMesActual = datosPorMes[mesActual] || { stock: [], trabajos: [] };
+  // --- FILTROS DINÁMICOS POR MES ---
+  const stockFiltrado = stock.filter(s => s.fecha.startsWith(mesActual));
+  const trabajosFiltrados = trabajos.filter(t => t.fecha.startsWith(mesActual));
 
-  // --- 🧮 CALCULADORA DE UNIDADES CONSUMIDAS EN TIEMPO REAL ---
-  const getUnidadesConsumidas = (productoId: string) => {
-    return datosMesActual.trabajos
-      .reduce((sum, t) => t.productoId === productoId ? sum + (Number(t.cantidadUsada) || 0) : sum, 0);
+  // --- CONTADORES DE STOCK EN TIEMPO REAL ---
+  const getUnidadesConsumidasGlobal = (productoId: string) => {
+    return trabajos.reduce((sum, t) => t.productoId === productoId ? sum + (Number(t.cantidadUsada) || 0) : sum, 0);
   };
 
-  // --- 📈 CALCULADORAS FINANCIERAS GLOBALES ---
-  const totalGastosStock = datosMesActual.stock.reduce((sum, item) => sum + (Number(item.costoTotal) || 0), 0);
-  
-  const totalGastosOperativos = datosMesActual.trabajos.reduce((sum, t) => {
+  // --- CALCULADORA FINANCIERA DEL MES SELECCIONADO ---
+  const totalGastosStock = stockFiltrado.reduce((sum, item) => sum + (Number(item.costoTotal) || 0), 0);
+  const totalGastosOperativos = trabajosFiltrados.reduce((sum, t) => {
     return sum + (Number(t.combustible) || 0) + (Number(t.manoObra) || 0) + (Number(t.otrosCostos) || 0);
   }, 0);
-
-  const totalFacturado = datosMesActual.trabajos.reduce((sum, t) => sum + (Number(t.precioCobrado) || 0), 0);
+  const totalFacturado = trabajosFiltrados.reduce((sum, t) => sum + (Number(t.precioCobrado) || 0), 0);
   const gananciaNetaMensual = totalFacturado - (totalGastosStock + totalGastosOperativos);
 
-  // --- 🛠️ CONTROLADORES ATÓMICOS DE ESTADO (FUNCIONALES) ---
-
+  // --- CONTROLADORES DE INVENTARIO (ACCIONES ACCESIBLES) ---
   const agregarItemStock = () => {
-    setDatosPorMes(prev => {
-      const mesData = prev[mesActual] || { stock: [], trabajos: [] };
-      const nuevo: ItemStock = { id: `prod-${Date.now()}`, nombre: '', cantidad: 0, costoTotal: 0 };
-      return {
-        ...prev,
-        [mesActual]: { ...mesData, stock: [...mesData.stock, nuevo] }
-      };
-    });
+    const hoy = new Date().toISOString().split('T')[0];
+    const fechaInicial = hoy.startsWith(mesActual) ? hoy : `${mesActual}-01`;
+
+    const nuevo: ItemStock = {
+      id: `prod-${Date.now()}`,
+      fecha: fechaInicial,
+      nombre: '',
+      cantidad: 0,
+      costoTotal: 0
+    };
+    setStock(prev => [...prev, nuevo]);
   };
 
   const editarItemStock = (id: string, campo: keyof ItemStock, valor: any) => {
-    setDatosPorMes(prev => {
-      const mesData = prev[mesActual] || { stock: [], trabajos: [] };
-      const modificados = mesData.stock.map(item => 
-        item.id === id ? { ...item, [campo]: campo === 'nombre' ? valor : Number(valor) } : item
-      );
-      return {
-        ...prev,
-        [mesActual]: { ...mesData, stock: modificados }
-      };
-    });
+    setStock(prev => prev.map(item =>
+      item.id === id ? { ...item, [campo]: campo === 'nombre' || campo === 'fecha' ? valor : Number(valor) } : item
+    ));
   };
 
   const eliminarItemStock = (id: string) => {
-    setDatosPorMes(prev => {
-      const mesData = prev[mesActual] || { stock: [], trabajos: [] };
-      const stockFiltrado = mesData.stock.filter(item => item.id !== id);
-      const trabajosLimpios = mesData.trabajos.map(t => 
-        t.productoId === id ? { ...t, productoId: '', cantidadUsada: 0 } : t
-      );
-      return {
-        ...prev,
-        [mesActual]: { stock: stockFiltrado, trabajos: trabajosLimpios }
-      };
-    });
+    setStock(prev => prev.filter(item => item.id !== id));
+    setTrabajos(prev => prev.map(t => t.productoId === id ? { ...t, productoId: '', cantidadUsada: 0 } : t));
   };
 
+  // --- CONTROLADORES DE TRABAJOS (BLINDADOS ANTI-BLOQUEOS) ---
   const agregarTrabajo = () => {
-    setDatosPorMes(prev => {
-      const mesData = prev[mesActual] || { stock: [], trabajos: [] };
-      const nuevo: TrabajoFumigacion = {
-        id: `trab-${Date.now()}`,
-        fecha: new Date().toISOString().split('T')[0],
-        cliente: '',
-        servicio: '',
-        productoId: '', 
-        cantidadUsada: 0,
-        combustible: 0,
-        manoObra: 0,
-        otrosCostos: 0,
-        precioCobrado: 0,
-        estado: 'Pendiente'
-      };
-      return {
-        ...prev,
-        [mesActual]: { ...mesData, trabajos: [...mesData.trabajos, nuevo] }
-      };
-    });
+    const hoy = new Date().toISOString().split('T')[0];
+    const fechaInicial = hoy.startsWith(mesActual) ? hoy : `${mesActual}-01`;
+
+    const nuevo: TrabajoFumigacion = {
+      id: `trab-${Date.now()}`,
+      fecha: fechaInicial,
+      cliente: '',
+      servicio: '',
+      productoId: '',
+      cantidadUsada: 0,
+      combustible: 0,
+      manoObra: 0,
+      otrosCostos: 0,
+      precioCobrado: 0,
+      estado: 'Pendiente'
+    };
+    setTrabajos(prev => [...prev, nuevo]);
   };
 
-  // 🔒 CONTROLADOR DE EDICIÓN CON CANDADO INTEGRADO ANTI-RACE CONDITIONS
   const editarTrabajo = (id: string, campo: keyof TrabajoFumigacion, valor: any) => {
-    setDatosPorMes(prev => {
-      const mesData = prev[mesActual] || { stock: [], trabajos: [] };
-      
-      const nuevosTrabajos = mesData.trabajos.map(t => {
-        if (t.id === id) {
-          // Creamos una copia base con el nuevo cambio solicitado
-          let trabajoActualizado = { ...t, [campo]: valor };
+    setTrabajos(prev => prev.map(t => {
+      if (t.id === id) {
+        let trabajoActualizado = { ...t, [campo]: valor };
 
-          // 🌟 SI SE CAMBIA EL PRODUCTO: Reseteamos la cantidad usada en la misma operación atómica
-          if (campo === 'productoId') {
+        // Al cambiar de producto, limpiamos la cantidad usada de forma atómica
+        if (campo === 'productoId') {
+          trabajoActualizado.cantidadUsada = 0;
+        }
+
+        // Validaciones automáticas de stock real disponible en el galpón global
+        if (campo === 'cantidadUsada' || campo === 'productoId') {
+          const productoAsociado = stock.find(s => s.id === trabajoActualizado.productoId);
+
+          if (productoAsociado) {
+            // Calculamos lo gastado por OTRAS filas globalmente
+            const consumidosOtros = prev
+              .filter(trab => trab.id !== id && trab.productoId === trabajoActualizado.productoId)
+              .reduce((sum, trab) => sum + (Number(trab.cantidadUsada) || 0), 0);
+
+            const disponibleReal = productoAsociado.cantidad - consumidosOtros;
+            const numValor = Number(trabajoActualizado.cantidadUsada) || 0;
+
+            if (numValor > disponibleReal) {
+              trabajoActualizado.cantidadUsada = disponibleReal;
+            } else if (numValor < 0) {
+              trabajoActualizado.cantidadUsada = 0;
+            } else {
+              trabajoActualizado.cantidadUsada = numValor;
+            }
+          } else {
             trabajoActualizado.cantidadUsada = 0;
           }
-
-          // VALIDACIÓN DE SEGURIDAD BASADA EN EL ESTADO FRESCO 'PREV'
-          if (campo === 'cantidadUsada' || campo === 'productoId') {
-            const productoAsociado = mesData.stock.find(s => s.id === trabajoActualizado.productoId);
-            
-            if (productoAsociado) {
-              // Calculamos lo consumido por las OTRAS filas de este mes
-              const consumidosOtros = mesData.trabajos
-                .filter(trab => trab.id !== id && trab.productoId === trabajoActualizado.productoId)
-                .reduce((sum, trab) => sum + (Number(trab.cantidadUsada) || 0), 0);
-              
-              const maxPermitido = productoAsociado.cantidad - consumidosOtros;
-              const numValor = Number(trabajoActualizado.cantidadUsada) || 0;
-
-              if (numValor > maxPermitido) {
-                trabajoActualizado.cantidadUsada = maxPermitido;
-              } else if (numValor < 0) {
-                trabajoActualizado.cantidadUsada = 0;
-              } else {
-                trabajoActualizado.cantidadUsada = numValor;
-              }
-            } else {
-              // Si no hay producto seleccionado, la cantidad obligatoriamente cae a 0
-              trabajoActualizado.cantidadUsada = 0;
-            }
-          } else if (['combustible', 'manoObra', 'otrosCostos', 'precioCobrado'].includes(campo as string)) {
-            trabajoActualizado[campo] = Number(valor) || 0;
-          }
-
-          return trabajoActualizado;
+        } else if (['combustible', 'manoObra', 'otrosCostos', 'precioCobrado'].includes(campo as string)) {
+          trabajoActualizado[campo] = Number(valor) || 0;
         }
-        return t;
-      });
 
-      return {
-        ...prev,
-        [mesActual]: { ...mesData, trabajos: nuevosTrabajos }
-      };
-    });
+        return trabajoActualizado;
+      }
+      return t;
+    }));
   };
 
   const eliminarTrabajo = (id: string) => {
-    setDatosPorMes(prev => {
-      const mesData = prev[mesActual] || { stock: [], trabajos: [] };
-      return {
-        ...prev,
-        [mesActual]: { ...mesData, trabajos: mesData.trabajos.filter(t => t.id !== id) }
-      };
-    });
+    setTrabajos(prev => prev.filter(t => t.id !== id));
   };
 
   return (
     <div className="min-h-screen bg-slate-900 text-slate-100 p-4 md:p-8 font-sans">
       
-      {/* ENCABEZADO PRINCIPAL */}
+      {/* HEADER */}
       <div className="flex flex-col lg:flex-row justify-between items-start lg:items-center gap-4 mb-8 bg-slate-800 p-6 rounded-2xl border border-slate-700 shadow-xl">
         <div>
-          <h1 className="text-3xl font-extrabold text-emerald-400 tracking-wide">SGA Conectado</h1>
-          <p className="text-slate-400 text-sm mt-1">Inventario Vinculado Automatizado en Tiempo Real</p>
+          <h1 className="text-3xl font-extrabold text-emerald-400 tracking-wide">SGA Unificado</h1>
+          <p className="text-slate-400 text-sm mt-1">Base de Datos Optimizada • Insumos Globales Conectados</p>
         </div>
         <div className="flex items-center gap-3 bg-slate-950 p-2 rounded-xl border border-slate-700">
-          <label className="text-xs font-bold uppercase tracking-wider text-slate-400 pl-2">Mes de Gestión:</label>
+          <label className="text-xs font-bold uppercase tracking-wider text-slate-400 pl-2">Mes de Control:</label>
           <select 
             value={mesActual} 
             onChange={(e) => setMesActual(e.target.value)}
             className="bg-transparent text-emerald-400 font-bold outline-none cursor-pointer pr-2"
           >
-            <option value="2026-05">Mayo 2026</option>
-            <option value="2026-06">Junio 2026</option>
-            <option value="2026-07">Julio 2026</option>
+            <option value="2026-05" className="bg-slate-900 text-emerald-400">Mayo 2026</option>
+            <option value="2026-06" className="bg-slate-900 text-emerald-400">Junio 2026</option>
+            <option value="2026-07" className="bg-slate-900 text-emerald-400">Julio 2026</option>
           </select>
         </div>
       </div>
 
-      {/* MÉTRICAS FINANCIERAS */}
+      {/* MÉTRICAS FINANCIERAS DINÁMICAS */}
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 mb-8">
         <div className="bg-slate-800 p-5 rounded-2xl border border-slate-700 shadow-md">
-          <p className="text-xs font-bold uppercase tracking-wider text-slate-400">Facturación Total</p>
+          <p className="text-xs font-bold uppercase tracking-wider text-slate-400">Facturación {mesActual}</p>
           <p className="text-2xl font-black text-emerald-400 mt-2">${totalFacturado.toLocaleString('es-AR')}</p>
         </div>
         <div className="bg-slate-800 p-5 rounded-2xl border border-slate-700 shadow-md">
-          <p className="text-xs font-bold uppercase tracking-wider text-slate-400">Invertido en Insumos (Galpón)</p>
+          <p className="text-xs font-bold uppercase tracking-wider text-slate-400">Inversión Stock {mesActual}</p>
           <p className="text-2xl font-black text-orange-400 mt-2">${totalGastosStock.toLocaleString('es-AR')}</p>
         </div>
         <div className="bg-slate-800 p-5 rounded-2xl border border-slate-700 shadow-md">
-          <p className="text-xs font-bold uppercase tracking-wider text-slate-400">Gastos de Viaje / Logística</p>
+          <p className="text-xs font-bold uppercase tracking-wider text-slate-400">Costos Operativos {mesActual}</p>
           <p className="text-2xl font-black text-rose-400 mt-2">${totalGastosOperativos.toLocaleString('es-AR')}</p>
         </div>
         <div className={`bg-slate-800 p-5 rounded-2xl border shadow-md ${gananciaNetaMensual >= 0 ? 'border-emerald-500/30' : 'border-rose-500/30'}`}>
-          <p className="text-xs font-bold uppercase tracking-wider text-slate-400">Caja Neta del Mes</p>
+          <p className="text-xs font-bold uppercase tracking-wider text-slate-400">Balance Neto del Mes</p>
           <p className={`text-2xl font-black mt-2 ${gananciaNetaMensual >= 0 ? 'text-emerald-400' : 'text-rose-400'}`}>
             ${gananciaNetaMensual.toLocaleString('es-AR')}
           </p>
@@ -281,7 +231,7 @@ export default function DashboardSGA() {
           onClick={() => setTabActiva('stock')}
           className={`flex-1 flex justify-center items-center gap-2 py-2.5 rounded-lg text-sm font-bold transition-all ${tabActiva === 'stock' ? 'bg-emerald-400 text-slate-950 shadow-lg' : 'text-slate-400 hover:text-slate-200'}`}
         >
-          📦 Stock e Inventario
+          📦 Compras y Stock
         </button>
         <button
           type="button"
@@ -292,21 +242,20 @@ export default function DashboardSGA() {
         </button>
       </div>
 
-      {/* SECCIÓN ACTIVA */}
+      {/* PANEL DE STOCK */}
       {tabActiva === 'stock' ? (
-        /* VISTA STOCK */
         <div className="bg-slate-800 rounded-2xl border border-slate-700 shadow-xl p-6">
           <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4 mb-6">
             <div>
-              <h2 className="text-xl font-bold text-slate-200">Depósito de Químicos y Materiales</h2>
-              <p className="text-xs text-slate-400">Registrá tus compras. El stock disponible bajará solo de acuerdo a lo gastado en la agenda.</p>
+              <h2 className="text-xl font-bold text-slate-200">Compras de Remesas / Lotes</h2>
+              <p className="text-xs text-slate-400">Colocá la fecha de compra para asignarle el gasto a ese mes. Los productos quedan guardados en el galpón global.</p>
             </div>
             <button 
               type="button"
               onClick={agregarItemStock}
               className="bg-emerald-400 hover:bg-emerald-500 text-slate-950 font-bold px-4 py-2 rounded-xl text-sm transition-all shadow-lg"
             >
-              ➕ Registrar Nueva Compra
+              ➕ Registrar Insumo
             </button>
           </div>
 
@@ -314,24 +263,33 @@ export default function DashboardSGA() {
             <table className="w-full text-left text-sm text-slate-300">
               <thead className="bg-slate-900 text-slate-400 uppercase text-xs tracking-wider">
                 <tr>
-                  <th className="p-3 rounded-l-lg">Detalle del Producto</th>
-                  <th className="p-3 text-center">Cantidad Comprada</th>
-                  <th className="p-3 text-center">Stock Disponible</th>
-                  <th className="p-3 text-right">Costo Total Compra ($)</th>
-                  <th className="p-3 text-center rounded-r-lg w-16">Acciones</th>
+                  <th className="p-3 rounded-l-lg w-40">Fecha Compra</th>
+                  <th className="p-3">Nombre del Químico / Insumo</th>
+                  <th className="p-3 text-center">Cant. Comprada</th>
+                  <th className="p-3 text-center">Stock Actual Galpón</th>
+                  <th className="p-3 text-right">Costo Total ($)</th>
+                  <th className="p-3 text-center rounded-r-lg w-16"></th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-slate-700/50">
-                {datosMesActual.stock.map((item) => {
-                  const consumidos = getUnidadesConsumidas(item.id);
-                  const disponible = item.cantidad - consumidos;
+                {stockFiltrado.map((item) => {
+                  const totalConsumido = getUnidadesConsumidasGlobal(item.id);
+                  const disponible = item.cantidad - totalConsumido;
 
                   return (
                     <tr key={item.id} className="hover:bg-slate-700/30 transition-colors">
                       <td className="p-3">
                         <input 
+                          type="date" 
+                          value={item.fecha}
+                          onChange={(e) => editarItemStock(item.id, 'fecha', e.target.value)}
+                          className="bg-slate-900 border border-slate-700 focus:border-emerald-400 rounded px-2 py-1 text-xs text-slate-100 outline-none w-full"
+                        />
+                      </td>
+                      <td className="p-3">
+                        <input 
                           type="text" 
-                          placeholder="Ej: Deltametrina 1L"
+                          placeholder="Ej: Gel Cucarachicida x40g"
                           value={item.nombre}
                           onChange={(e) => editarItemStock(item.id, 'nombre', e.target.value)}
                           className="bg-transparent border-b border-slate-700 focus:border-emerald-400 focus:bg-slate-900 px-2 py-1 rounded text-slate-100 w-full outline-none"
@@ -348,11 +306,9 @@ export default function DashboardSGA() {
                       </td>
                       <td className="p-3 text-center font-bold">
                         {disponible <= 0 ? (
-                          <span className="bg-rose-500/20 text-rose-400 px-2.5 py-1 rounded-full text-xs border border-rose-500/30">⚠️ Agotado</span>
-                        ) : disponible === item.cantidad ? (
-                          <span className="bg-emerald-500/10 text-emerald-400 px-2.5 py-1 rounded-full text-xs border border-emerald-500/20">{disponible} intactos</span>
+                          <span className="bg-rose-500/20 text-rose-400 px-2.5 py-1 rounded-full text-xs border border-rose-500/30">⚠️ Sin Stock</span>
                         ) : (
-                          <span className="bg-amber-500/10 text-amber-400 px-2.5 py-1 rounded-full text-xs border border-amber-500/20">{disponible} disponibles</span>
+                          <span className="bg-emerald-500/10 text-emerald-400 px-2.5 py-1 rounded-full text-xs border border-emerald-500/20">{disponible} unidades</span>
                         )}
                       </td>
                       <td className="p-3 text-right">
@@ -368,7 +324,7 @@ export default function DashboardSGA() {
                         <button 
                           type="button"
                           onClick={() => eliminarItemStock(item.id)}
-                          className="text-slate-500 hover:text-rose-400 px-2 py-1 rounded text-lg transition-colors"
+                          className="text-slate-500 hover:text-rose-400 text-lg transition-colors"
                         >
                           🗑️
                         </button>
@@ -376,9 +332,9 @@ export default function DashboardSGA() {
                     </tr>
                   );
                 })}
-                {datosMesActual.stock.length === 0 && (
+                {stockFiltrado.length === 0 && (
                   <tr>
-                    <td colSpan={5} className="text-center p-8 text-slate-500 italic">No hay compras ingresadas en este mes.</td>
+                    <td colSpan={6} className="text-center p-8 text-slate-500 italic">No registraste compras con fecha de este mes.</td>
                   </tr>
                 )}
               </tbody>
@@ -386,33 +342,33 @@ export default function DashboardSGA() {
           </div>
         </div>
       ) : (
-        /* VISTA TRABAJOS */
+        /* PANEL DE TRABAJOS */
         <div className="bg-slate-800 rounded-2xl border border-slate-700 shadow-xl p-6">
           <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4 mb-6">
             <div>
-              <h2 className="text-xl font-bold text-slate-200">Hoja de Ruta y Desglose Financiero</h2>
-              <p className="text-xs text-slate-400">Seleccioná qué insumo utilizaste de la lista. Las cantidades se validan solas contra tu stock real.</p>
+              <h2 className="text-xl font-bold text-slate-200">Hoja de Ruta y Desglose de Gastos</h2>
+              <p className="text-xs text-slate-400">Podés usar cualquier insumo de la lista global de stock. Las cantidades se validan solas contra el galpón.</p>
             </div>
             <button 
               type="button"
               onClick={agregarTrabajo}
               className="bg-blue-500 hover:bg-blue-600 text-slate-100 font-bold px-4 py-2 rounded-xl text-sm transition-all shadow-lg"
             >
-              ➕ Agendar Visita / Servicio
+              ➕ Agendar Trabajo
             </button>
           </div>
 
           <div className="overflow-x-auto">
-            <table className="w-full text-left text-sm text-slate-300 min-w-[1200px]">
+            <table className="w-full text-left text-sm text-slate-300 min-w-[1250px]">
               <thead className="bg-slate-900 text-slate-400 uppercase text-xs tracking-wider">
                 <tr>
                   <th className="p-3 rounded-l-lg w-36">Fecha</th>
                   <th className="p-3 w-40">Cliente</th>
                   <th className="p-3 w-36">Servicio</th>
                   <th className="p-3 text-center w-32">Estado</th>
-                  <th className="p-3 w-48">Insumo Utilizado</th>
+                  <th className="p-3 w-52">Insumo Utilizado</th>
                   <th className="p-3 text-center w-20">Cant.</th>
-                  <th className="p-3 text-right text-rose-400">Costo Insumo ($)</th>
+                  <th className="p-3 text-right text-rose-400">Costo Insumo</th>
                   <th className="p-3 text-right">Nafta ($)</th>
                   <th className="p-3 text-right">Mano Obra ($)</th>
                   <th className="p-3 text-right">Otros ($)</th>
@@ -422,11 +378,11 @@ export default function DashboardSGA() {
                 </tr>
               </thead>
               <tbody className="divide-y divide-slate-700/50">
-                {datosMesActual.trabajos.map((t) => {
-                  const productoAsociado = datosMesActual.stock.find(s => s.id === t.productoId);
+                {trabajosFiltrados.map((t) => {
+                  const productoAsociado = stock.find(s => s.id === t.productoId);
                   
                   const consumidosOtros = productoAsociado 
-                    ? getUnidadesConsumidas(t.productoId) - (Number(t.cantidadUsada) || 0)
+                    ? getUnidadesConsumidasGlobal(t.productoId) - (Number(t.cantidadUsada) || 0)
                     : 0;
                   const maxPermitido = productoAsociado ? (productoAsociado.cantidad - consumidosOtros) : 0;
 
@@ -489,17 +445,17 @@ export default function DashboardSGA() {
                         </select>
                       </td>
 
-                      {/* SELECTOR DE PRODUCTO ATÓMICO */}
+                      {/* SELECTOR DE PRODUCTO CONECTADO GLOBAL */}
                       <td className="p-3">
                         <select
                           value={t.productoId}
                           onChange={(e) => editarTrabajo(t.id, 'productoId', e.target.value)}
-                          className="bg-slate-900 border border-slate-700 text-xs rounded p-1 text-slate-300 outline-none w-full focus:border-blue-400 cursor-pointer"
+                          className="bg-slate-900 border border-slate-700 text-xs rounded p-1 text-slate-100 outline-none w-full focus:border-blue-400 cursor-pointer"
                         >
-                          <option value="">-- Ninguno / Sin Insumo --</option>
-                          {datosMesActual.stock.map(item => (
-                            <option key={item.id} value={item.id}>
-                              {item.nombre || 'Producto sin nombre'}
+                          <option value="" className="bg-slate-900 text-slate-300">-- Sin Insumo / Ninguno --</option>
+                          {stock.map(item => (
+                            <option key={item.id} value={item.id} className="bg-slate-900 text-slate-100">
+                              {item.nombre || 'Insumo sin nombre'} ({item.fecha.substring(5,7)}/{item.fecha.substring(2,4)})
                             </option>
                           ))}
                         </select>
@@ -515,11 +471,11 @@ export default function DashboardSGA() {
                           disabled={!t.productoId} 
                           value={t.cantidadUsada || ''}
                           onChange={(e) => editarTrabajo(t.id, 'cantidadUsada', e.target.value)}
-                          className="bg-transparent border-b border-slate-700 text-center focus:border-blue-400 focus:bg-slate-900 px-1 py-1 rounded text-slate-100 w-12 outline-none text-xs disabled:opacity-30 disabled:border-transparent"
+                          className="bg-transparent border-b border-slate-700 text-center focus:border-blue-400 focus:bg-slate-900 px-1 py-1 rounded text-slate-100 w-12 outline-none text-xs disabled:opacity-20 disabled:border-transparent"
                         />
                       </td>
 
-                      {/* COSTO AUTOMÁTICO DE INSUMO */}
+                      {/* COSTO DE INSUMO GENERADO */}
                       <td className="p-3 text-right font-semibold text-rose-400 text-xs">
                         ${costoInsumoCalculado.toLocaleString('es-AR')}
                       </td>
@@ -557,7 +513,7 @@ export default function DashboardSGA() {
                         />
                       </td>
 
-                      {/* Precio Cobrado */}
+                      {/* Cobrado */}
                       <td className="p-3 text-right">
                         <input 
                           type="number" 
@@ -568,17 +524,17 @@ export default function DashboardSGA() {
                         />
                       </td>
 
-                      {/* Ganancia de la Fila */}
+                      {/* Ganancia de Fila */}
                       <td className={`p-3 text-right font-black bg-slate-950/40 text-xs ${gananciaFila >= 0 ? 'text-emerald-400' : 'text-rose-400'}`}>
                         ${gananciaFila.toLocaleString('es-AR')}
                       </td>
 
-                      {/* Borrar Fila */}
+                      {/* Eliminar Fila */}
                       <td className="p-3 text-center">
                         <button 
                           type="button"
                           onClick={() => eliminarTrabajo(t.id)}
-                          className="text-slate-500 hover:text-rose-400 px-1 rounded transition-colors text-base"
+                          className="text-slate-500 hover:text-rose-400 transition-colors text-base"
                         >
                           🗑️
                         </button>
@@ -586,9 +542,9 @@ export default function DashboardSGA() {
                     </tr>
                   );
                 })}
-                {datosMesActual.trabajos.length === 0 && (
+                {trabajosFiltrados.length === 0 && (
                   <tr>
-                    <td colSpan={13} className="text-center p-8 text-slate-500 italic">No hay órdenes cargadas en la agenda para este mes.</td>
+                    <td colSpan={13} className="text-center p-8 text-slate-500 italic">No hay órdenes creadas para este mes. ¡Hacé click en Agendar Trabajo arriba!</td>
                   </tr>
                 )}
               </tbody>
